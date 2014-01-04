@@ -107,10 +107,6 @@ func (d *Document) Content() string {
 		article := d.getArticle()
 		articleText := d.sanitize(article)
 
-		fmt.Println("Article===================")
-		fmt.Println(articleText)
-		fmt.Println("************END")
-
 		if len(strings.TrimSpace(articleText)) < d.RetryLength {
 			if d.RemoveUnlikelyCandidates {
 				d.RemoveUnlikelyCandidates = false
@@ -161,9 +157,6 @@ func (d *Document) selectBestCandidate() {
 		best = &candidate{d.document.Find("body"), 0}
 	}
 
-	fmt.Println("Best candidate======")
-	fmt.Println(best.selection.Html())
-	fmt.Println("**************")
 	d.bestCandidate = best
 }
 
