@@ -20,7 +20,9 @@ var unlikelyCandidatesRegexp = regexp.MustCompile(`(?i)combx|comment|community|d
 var divToPElementsRegexp = regexp.MustCompile(`(?i)<(a|blockquote|dl|div|img|ol|p|pre|table|ul)`)
 
 var negativeRegexp = regexp.MustCompile(`(?i)combx|comment|com-|contact|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|shoutbox|sidebar|sponsor|shopping|tags|tool|widget`)
-var positiveRegexp = regexp.MustCompile(`(?i)rticle|body|content|entry|hentry|main|page|pagination|post|text|blog|story`)
+var positiveRegexp = regexp.MustCompile(`(?i)article|body|content|entry|hentry|main|page|pagination|post|text|blog|story`)
+
+var stripCommentRegexp = regexp.MustCompile(`(?s)\<\!\-{2}.+?-{2}\>`)
 
 var normalizeWhitespaceRegexp = regexp.MustCompile(`[\r\n\f]+`)
 
@@ -76,6 +78,9 @@ func (d *Document) initializeHtml(s string) error {
 	// replace font tags
 	s = replaceFontsRegexp.ReplaceAllString(s, "<$1span>")
 
+	// manually strip regexps since html parser seems to miss some
+	s = stripCommentRegexp.ReplaceAllString(s, "")
+
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(s))
 	if err != nil {
 		return err
@@ -86,15 +91,6 @@ func (d *Document) initializeHtml(s string) error {
 		s = "<body/>"
 		return d.initializeHtml(s)
 	}
-
-	traverse(doc.Get(0), func(n *html.Node) {
-		if n.Type == html.CommentNode {
-			parent := n.Parent
-			if parent != nil {
-				parent.RemoveChild(n)
-			}
-		}
-	})
 
 	d.document = doc
 	return nil
@@ -123,7 +119,7 @@ func (d *Document) Content() string {
 			}
 
 			if retry {
-				log.Println("Retrying with length %d < retry length %d", length, d.RetryLength)
+				log.Printf("Retrying with length %d < retry length %d\n", length, d.RetryLength)
 				d.initializeHtml(d.input)
 				articleText = d.Content()
 			}
@@ -363,7 +359,7 @@ func (d *Document) sanitize(article string) string {
 		}
 	})
 
-	s.Find("form,object,iframe,embed").Each(func(i int, s *goquery.Selection) {
+	s.Find("input,select,textarea,object,iframe,embed").Each(func(i int, s *goquery.Selection) {
 		removeNodes(s)
 	})
 
@@ -424,28 +420,17 @@ func (d *Document) sanitize(article string) string {
 		} else {
 			if _, ok := replaceWithWhitespace[node.Data]; ok {
 				// just replace with a text node and add whitespace
-				node.Data = s.Text()
+				node.Data = fmt.Sprintf(" %s ", s.Text())
 				node.Type = html.TextNode
 				node.FirstChild = nil
 				node.LastChild = nil
 			} else {
-				// replace node with children
-				parent := node.Parent
-
-				if parent == nil {
+				if node.Parent == nil {
 					text = s.Text()
 					return
 				} else {
-					var next *html.Node
-
-					for c := node.FirstChild; c != nil; c = next {
-						next = c.NextSibling
-						node.RemoveChild(c)
-
-						parent.InsertBefore(c, node)
-					}
-
-					parent.RemoveChild(node)
+					// replace node with children
+					replaceNodeWithChildren(node)
 				}
 			}
 		}
@@ -474,7 +459,7 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 
 		if weight+contentScore < 0 {
 			removeNodes(s)
-			log.Printf("Conditionally cleaned %s%s with weight %d and content score %d\n", node.Data, getName(s), weight, contentScore)
+			log.Printf("Conditionally cleaned %s%s with weight %f and content score %f\n", node.Data, getName(s), weight, contentScore)
 			return
 		}
 
@@ -507,10 +492,10 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 				reason = "too short content length without a single image"
 				remove = true
 			} else if weight < 25 && linkDensity > 0.2 {
-				reason = fmt.Sprintf("too many links for its weight (%d)", weight)
+				reason = fmt.Sprintf("too many links for its weight (%f)", weight)
 				remove = true
 			} else if weight >= 25 && linkDensity > 0.5 {
-				reason = fmt.Sprintf("too many links for its weight (%d)", weight)
+				reason = fmt.Sprintf("too many links for its weight (%f)", weight)
 				remove = true
 			} else if (counts["embed"] == 1 && contentLength < 75) || counts["embed"] > 1 {
 				reason = "<embed>s with too short a content length, or too many <embed>s"
@@ -518,7 +503,7 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 			}
 
 			if remove {
-				log.Printf("Conditionally cleaned %s with weight %d and content score %d because it has %s\n", getName(s), weight, contentScore, reason)
+				log.Printf("Conditionally cleaned %s%s with weight %f and content score %f because it has %s\n", node.Data, getName(s), weight, contentScore, reason)
 				removeNodes(s)
 			}
 		}
@@ -532,15 +517,6 @@ func getName(s *goquery.Selection) string {
 	return fmt.Sprintf("#%s.%s", id, class)
 }
 
-func traverse(node *html.Node, eval func(*html.Node)) {
-	eval(node)
-
-	// check each child
-	for c := node.FirstChild; c != nil; c = c.NextSibling {
-		traverse(c, eval)
-	}
-}
-
 func removeNodes(s *goquery.Selection) {
 	s.Each(func(i int, s *goquery.Selection) {
 		parent := s.Parent()
@@ -550,4 +526,18 @@ func removeNodes(s *goquery.Selection) {
 			parent.Get(0).RemoveChild(s.Get(0))
 		}
 	})
+}
+
+func replaceNodeWithChildren(n *html.Node) {
+	var next *html.Node
+	parent := n.Parent
+
+	for c := n.FirstChild; c != nil; c = next {
+		next = c.NextSibling
+		n.RemoveChild(c)
+
+		parent.InsertBefore(c, n)
+	}
+
+	parent.RemoveChild(n)
 }
