@@ -21,7 +21,7 @@ func TestGeneralFunctionality(t *testing.T) {
 	doc.MinTextLength = 0
 	doc.RetryLength = 1
 	content := doc.Content()
-	if content != "Some content" {
+	if !strings.Contains(content, "Some content") {
 		t.Errorf("Expected content %q to match %q", content, "Some content")
 	}
 }
