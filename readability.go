@@ -16,13 +16,15 @@ var replaceFontsRegexp = regexp.MustCompile(`(?i)<(\/?)font[^>]*>`)
 
 var blacklistCandidatesRegexp = regexp.MustCompile(`(?i)popupbody`)
 var okMaybeItsACandidateRegexp = regexp.MustCompile(`(?i)and|article|body|column|main|shadow`)
-var unlikelyCandidatesRegexp = regexp.MustCompile(`(?i)combx|comment|community|disqus|extra|foot|header|menu|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup`)
+var unlikelyCandidatesRegexp = regexp.MustCompile(`(?i)combx|comment|community|hidden|disqus|modal|extra|foot|header|menu|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup`)
 var divToPElementsRegexp = regexp.MustCompile(`(?i)<(a|blockquote|dl|div|img|ol|p|pre|table|ul)`)
 
-var negativeRegexp = regexp.MustCompile(`(?i)combx|comment|com-|contact|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|shoutbox|sidebar|sponsor|shopping|tags|tool|widget`)
+var negativeRegexp = regexp.MustCompile(`(?i)combx|comment|com-|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|shoutbox|sidebar|sponsor|shopping|tags|tool|widget`)
 var positiveRegexp = regexp.MustCompile(`(?i)article|body|content|entry|hentry|main|page|pagination|post|text|blog|story`)
 
 var stripCommentRegexp = regexp.MustCompile(`(?s)\<\!\-{2}.+?-{2}\>`)
+
+var sentenceRegexp = regexp.MustCompile(`\.( |$)`)
 
 var normalizeWhitespaceRegexp = regexp.MustCompile(`[\r\n\f]+`)
 
@@ -132,7 +134,8 @@ func (d *Document) Content() string {
 }
 
 func (d *Document) prepareCandidates() {
-	d.document.Find("script, style").Each(func(i int, s *goquery.Selection) {
+	// noscript might be valid, but probably not so we'll just remove it
+	d.document.Find("script, style,noscript").Each(func(i int, s *goquery.Selection) {
 		removeNodes(s)
 	})
 
@@ -186,7 +189,7 @@ func (d *Document) getArticle() string {
 			if contentLength >= 80 && linkDensity < .25 {
 				append = true
 			} else if contentLength < 80 && linkDensity == 0 {
-				append, _ = regexp.MatchString(`\.( |$)`, content)
+				append = sentenceRegexp.MatchString(content)
 			}
 		}
 
@@ -359,7 +362,7 @@ func (d *Document) sanitize(article string) string {
 		}
 	})
 
-	s.Find("input,select,textarea,object,iframe,embed").Each(func(i int, s *goquery.Selection) {
+	s.Find("input,select,textarea,button,object,iframe,embed").Each(func(i int, s *goquery.Selection) {
 		removeNodes(s)
 	})
 
