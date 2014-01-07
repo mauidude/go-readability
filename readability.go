@@ -13,7 +13,7 @@ import (
 )
 
 var replaceBrsRegexp = regexp.MustCompile(`(?i)(<br[^>]*>[ \n\r\t]*){2,}`)
-var replaceFontsRegexp = regexp.MustCompile(`(?i)<(\/?)font[^>]*>`)
+var replaceFontsRegexp = regexp.MustCompile(`(?i)<(\/?)\s*font[^>]*?>`)
 
 var blacklistCandidatesRegexp = regexp.MustCompile(`(?i)popupbody`)
 var okMaybeItsACandidateRegexp = regexp.MustCompile(`(?i)and|article|body|column|main|shadow`)
@@ -86,7 +86,7 @@ func (d *Document) initializeHtml(s string) error {
 	s = replaceBrsRegexp.ReplaceAllString(s, "</p><p>")
 
 	// replace font tags
-	s = replaceFontsRegexp.ReplaceAllString(s, "<$1span>")
+	s = replaceFontsRegexp.ReplaceAllString(s, `<${1}span>`)
 
 	// manually strip regexps since html parser seems to miss some
 	s = stripCommentRegexp.ReplaceAllString(s, "")
