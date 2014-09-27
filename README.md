@@ -33,4 +33,4 @@ Tests
 -----
 
 To run tests
-`go test readability`
+`go test github.com/mauidude/go-readability`
