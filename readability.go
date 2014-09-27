@@ -2,32 +2,35 @@ package readability
 
 import (
 	"bytes"
-	"code.google.com/p/go.net/html"
 	"fmt"
-	"github.com/PuerkitoBio/goquery"
 	"io/ioutil"
 	"log"
 	"math"
 	"regexp"
 	"strings"
+
+	"code.google.com/p/go.net/html"
+	"github.com/PuerkitoBio/goquery"
 )
 
-var replaceBrsRegexp = regexp.MustCompile(`(?i)(<br[^>]*>[ \n\r\t]*){2,}`)
-var replaceFontsRegexp = regexp.MustCompile(`(?i)<(\/?)\s*font[^>]*?>`)
+var (
+	replaceBrsRegexp   = regexp.MustCompile(`(?i)(<br[^>]*>[ \n\r\t]*){2,}`)
+	replaceFontsRegexp = regexp.MustCompile(`(?i)<(\/?)\s*font[^>]*?>`)
 
-var blacklistCandidatesRegexp = regexp.MustCompile(`(?i)popupbody`)
-var okMaybeItsACandidateRegexp = regexp.MustCompile(`(?i)and|article|body|column|main|shadow`)
-var unlikelyCandidatesRegexp = regexp.MustCompile(`(?i)combx|comment|community|hidden|disqus|modal|extra|foot|header|menu|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup`)
-var divToPElementsRegexp = regexp.MustCompile(`(?i)<(a|blockquote|dl|div|img|ol|p|pre|table|ul)`)
+	blacklistCandidatesRegexp  = regexp.MustCompile(`(?i)popupbody`)
+	okMaybeItsACandidateRegexp = regexp.MustCompile(`(?i)and|article|body|column|main|shadow`)
+	unlikelyCandidatesRegexp   = regexp.MustCompile(`(?i)combx|comment|community|hidden|disqus|modal|extra|foot|header|menu|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup`)
+	divToPElementsRegexp       = regexp.MustCompile(`(?i)<(a|blockquote|dl|div|img|ol|p|pre|table|ul)`)
 
-var negativeRegexp = regexp.MustCompile(`(?i)combx|comment|com-|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|shoutbox|sidebar|sponsor|shopping|tags|tool|widget`)
-var positiveRegexp = regexp.MustCompile(`(?i)article|body|content|entry|hentry|main|page|pagination|post|text|blog|story`)
+	negativeRegexp = regexp.MustCompile(`(?i)combx|comment|com-|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|shoutbox|sidebar|sponsor|shopping|tags|tool|widget`)
+	positiveRegexp = regexp.MustCompile(`(?i)article|body|content|entry|hentry|main|page|pagination|post|text|blog|story`)
 
-var stripCommentRegexp = regexp.MustCompile(`(?s)\<\!\-{2}.+?-{2}\>`)
+	stripCommentRegexp = regexp.MustCompile(`(?s)\<\!\-{2}.+?-{2}\>`)
 
-var sentenceRegexp = regexp.MustCompile(`\.( |$)`)
+	sentenceRegexp = regexp.MustCompile(`\.( |$)`)
 
-var normalizeWhitespaceRegexp = regexp.MustCompile(`[\r\n\f]+`)
+	normalizeWhitespaceRegexp = regexp.MustCompile(`[\r\n\f]+`)
+)
 
 type candidate struct {
 	selection *goquery.Selection
@@ -169,6 +172,14 @@ func (d *Document) selectBestCandidate() {
 
 	if best == nil {
 		best = &candidate{d.document.Find("body"), 0}
+	}
+
+	for _, i := range d.candidates {
+
+		fmt.Println("**********************************")
+		fmt.Println("Candidate ", i.Node().Data, i.score)
+		fmt.Println(i.selection.Html())
+		fmt.Println("**********************************")
 	}
 
 	d.bestCandidate = best
