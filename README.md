@@ -13,7 +13,7 @@ Example
 
 ```
 import(
-  "go-readability"
+  "github.com/mauidude/go-readability"
 )
 
 ...
