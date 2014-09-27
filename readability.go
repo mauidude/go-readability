@@ -14,6 +14,8 @@ import (
 )
 
 var (
+	Logger = log.New(ioutil.Discard, "[readability] ", log.LstdFlags)
+
 	replaceBrsRegexp   = regexp.MustCompile(`(?i)(<br[^>]*>[ \n\r\t]*){2,}`)
 	replaceFontsRegexp = regexp.MustCompile(`(?i)<(\/?)\s*font[^>]*?>`)
 
@@ -56,8 +58,6 @@ type Document struct {
 	MinTextLength            int
 	RemoveEmptyNodes         bool
 	WhitelistTags            []string
-
-	logger *log.Logger
 }
 
 func NewDocument(s string) (*Document, error) {
@@ -70,7 +70,6 @@ func NewDocument(s string) (*Document, error) {
 		RetryLength:              250,
 		MinTextLength:            25,
 		RemoveEmptyNodes:         true,
-		logger:                   log.New(ioutil.Discard, "", log.LstdFlags),
 	}
 	err := d.initializeHtml(s)
 	if err != nil {
@@ -78,10 +77,6 @@ func NewDocument(s string) (*Document, error) {
 	}
 
 	return d, nil
-}
-
-func (d *Document) SetLogger(l *log.Logger) {
-	d.logger = l
 }
 
 func (d *Document) initializeHtml(s string) error {
@@ -132,7 +127,7 @@ func (d *Document) Content() string {
 			}
 
 			if retry {
-				d.logger.Printf("Retrying with length %d < retry length %d\n", length, d.RetryLength)
+				Logger.Printf("Retrying with length %d < retry length %d\n", length, d.RetryLength)
 				d.initializeHtml(d.input)
 				articleText = d.Content()
 			}
@@ -172,14 +167,6 @@ func (d *Document) selectBestCandidate() {
 
 	if best == nil {
 		best = &candidate{d.document.Find("body"), 0}
-	}
-
-	for _, i := range d.candidates {
-
-		fmt.Println("**********************************")
-		fmt.Println("Candidate ", i.Node().Data, i.score)
-		fmt.Println(i.selection.Html())
-		fmt.Println("**********************************")
 	}
 
 	d.bestCandidate = best
@@ -236,7 +223,7 @@ func (d *Document) removeUnlikelyCandidates() {
 		str := class + id
 
 		if blacklistCandidatesRegexp.MatchString(str) || (unlikelyCandidatesRegexp.MatchString(str) && !okMaybeItsACandidateRegexp.MatchString(str)) {
-			d.logger.Printf("Removing unlikely candidate -%s\n", str)
+			Logger.Printf("Removing unlikely candidate - %s\n", str)
 			removeNodes(s)
 		}
 	})
@@ -246,7 +233,7 @@ func (d *Document) transformMisusedDivsIntoParagraphs() {
 	d.document.Find("div").Each(func(i int, s *goquery.Selection) {
 		html, err := s.Html()
 		if err != nil {
-			d.logger.Printf("Unable to transform div to p %s\n", err)
+			Logger.Printf("Unable to transform div to p %s\n", err)
 			return
 		}
 
@@ -254,7 +241,7 @@ func (d *Document) transformMisusedDivsIntoParagraphs() {
 		if !divToPElementsRegexp.MatchString(html) {
 			class, _ := s.Attr("class")
 			id, _ := s.Attr("id")
-			d.logger.Printf("Altering div(#%s.%s) to p\n", id, class)
+			Logger.Printf("Altering div(#%s.%s) to p\n", id, class)
 
 			node := s.Get(0)
 			node.Data = "p"
@@ -370,7 +357,7 @@ func (d *Document) scoreNode(s *goquery.Selection) *candidate {
 func (d *Document) sanitize(article string) string {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(article))
 	if err != nil {
-		d.logger.Println("Unable to create document", err)
+		Logger.Println("Unable to create document", err)
 		return ""
 	}
 
@@ -481,7 +468,7 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 
 		if weight+contentScore < 0 {
 			removeNodes(s)
-			d.logger.Printf("Conditionally cleaned %s%s with weight %f and content score %f\n", node.Data, getName(s), weight, contentScore)
+			Logger.Printf("Conditionally cleaned %s%s with weight %f and content score %f\n", node.Data, getName(s), weight, contentScore)
 			return
 		}
 
@@ -525,7 +512,7 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 			}
 
 			if remove {
-				d.logger.Printf("Conditionally cleaned %s%s with weight %f and content score %f because it has %s\n", node.Data, getName(s), weight, contentScore, reason)
+				Logger.Printf("Conditionally cleaned %s%s with weight %f and content score %f because it has %s\n", node.Data, getName(s), weight, contentScore, reason)
 				removeNodes(s)
 			}
 		}
