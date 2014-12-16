@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	"code.google.com/p/go.net/html"
 	"github.com/PuerkitoBio/goquery"
+	"golang.org/x/net/html"
 )
 
 var (
