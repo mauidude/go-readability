@@ -24,6 +24,9 @@ func TestGeneralFunctionality(t *testing.T) {
 	if !strings.Contains(content, "Some content") {
 		t.Errorf("Expected content %q to match %q", content, "Some content")
 	}
+	if !strings.Contains(content, "title!") {
+		t.Errorf("Expected content %q to match %q", content, "title!")
+	}
 }
 
 func TestIgnoringSidebars(t *testing.T) {

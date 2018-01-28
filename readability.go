@@ -50,6 +50,7 @@ type Document struct {
 	candidates    map[*html.Node]*candidate
 	bestCandidate *candidate
 
+	Title                    string
 	RemoveUnlikelyCandidates bool
 	WeightClasses            bool
 	CleanConditionally       bool
@@ -132,7 +133,6 @@ func (d *Document) Content() string {
 				articleText = d.Content()
 			}
 		}
-
 		d.content = articleText
 	}
 
@@ -141,7 +141,7 @@ func (d *Document) Content() string {
 
 func (d *Document) prepareCandidates() {
 	// noscript might be valid, but probably not so we'll just remove it
-	d.document.Find("script, style,noscript").Each(func(i int, s *goquery.Selection) {
+	d.document.Find("script,style,noscript,link").Each(func(i int, s *goquery.Selection) {
 		removeNodes(s)
 	})
 
@@ -170,6 +170,10 @@ func (d *Document) selectBestCandidate() {
 	}
 
 	d.bestCandidate = best
+}
+
+func (d *Document) getTitle() string {
+	return d.document.Find("head title").First().Text()
 }
 
 func (d *Document) getArticle() string {
@@ -356,6 +360,7 @@ func (d *Document) scoreNode(s *goquery.Selection) *candidate {
 
 func (d *Document) sanitize(article string) string {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(article))
+	d.Title = d.getTitle()
 	if err != nil {
 		Logger.Println("Unable to create document", err)
 		return ""
@@ -449,7 +454,20 @@ func (d *Document) sanitize(article string) string {
 		text, _ = doc.Html()
 	}
 
+	text = addTitle(d.Title, text)
+
 	return normalizeWhitespaceRegexp.ReplaceAllString(text, "\n")
+}
+
+func addTitle(title string, html string) string {
+	var htmlTitle bytes.Buffer
+	old := "<head></head>"
+
+	htmlTitle.WriteString("<head><title>")
+	htmlTitle.WriteString(title)
+	htmlTitle.WriteString("</title></head>")
+
+	return strings.Replace(html, old, htmlTitle.String(), 1)
 }
 
 func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
