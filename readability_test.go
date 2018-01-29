@@ -2,6 +2,8 @@ package readability
 
 import (
 	"io/ioutil"
+	//	"log"
+	//	"os"
 	"strings"
 	"testing"
 )
@@ -129,7 +131,18 @@ func TestOutputForWellKnownDocuments(t *testing.T) {
 				"Latest videos",
 			},
 		},
+		"parahumans-chap1.html": &expectedOutput{
+			requiredFragments: []string{
+				"⊙",
+				//"Daybreak – 1.1",
+			},
+			excludedFragments: []string{
+			//"Previous Chapter",
+			//"Next Chapter",
+			},
+		},
 	}
+	//Logger = log.New(os.Stdout, "[readability] ", log.LstdFlags)
 
 	for file, expectedOutput := range inputs {
 		bytes, err := ioutil.ReadFile("test_fixtures/" + file)
@@ -149,14 +162,14 @@ func TestOutputForWellKnownDocuments(t *testing.T) {
 		for _, required := range expectedOutput.requiredFragments {
 			required = normalizeString(required)
 			if !strings.Contains(content, required) {
-				t.Errorf("Expected content %q to contain %q", content, required)
+				t.Errorf("Expected content %q to contain %q", file, required)
 			}
 		}
 
 		for _, excluded := range expectedOutput.excludedFragments {
 			excluded = normalizeString(excluded)
 			if strings.Contains(content, excluded) {
-				t.Errorf("Did not expect content %q to contain %q", content, excluded)
+				t.Errorf("Did not expect content %q to contain %q", file, excluded)
 			}
 		}
 	}
