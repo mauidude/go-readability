@@ -22,7 +22,9 @@ var (
 	blacklistCandidatesRegexp  = regexp.MustCompile(`(?i)popupbody`)
 	okMaybeItsACandidateRegexp = regexp.MustCompile(`(?i)and|article|body|column|main|shadow`)
 	unlikelyCandidatesRegexp   = regexp.MustCompile(`(?i)combx|comment|community|hidden|disqus|modal|extra|foot|header|menu|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup`)
-	divToPElementsRegexp       = regexp.MustCompile(`(?i)<(a|blockquote|dl|div|img|ol|p|pre|table|ul)`)
+	divToPElementsRegexp       = regexp.MustCompile(`(?i)<(a|dl|div|ol|pre|table|ul|header|footer|article)`)
+
+	okMaybeItsAHeaderFooterRegexp = regexp.MustCompile(`(?i)(header|footer)`)
 
 	negativeRegexp = regexp.MustCompile(`(?i)combx|comment|com-|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|shoutbox|sidebar|sponsor|shopping|tags|tool|widget`)
 	positiveRegexp = regexp.MustCompile(`(?i)article|body|content|entry|hentry|main|page|pagination|post|text|blog|story`)
@@ -31,7 +33,8 @@ var (
 
 	sentenceRegexp = regexp.MustCompile(`\.( |$)`)
 
-	normalizeWhitespaceRegexp = regexp.MustCompile(`[\r\n\f]+`)
+	normalizeWhitespaceRegexp     = regexp.MustCompile(`[\r\n\f ]+`)
+	normalizeHtmlWhiteSpaceRegexp = regexp.MustCompile(`(&(nbsp);)+`)
 )
 
 type candidate struct {
@@ -64,7 +67,7 @@ type Document struct {
 func NewDocument(s string) (*Document, error) {
 	d := &Document{
 		input:                    s,
-		WhitelistTags:            []string{"div", "p"},
+		WhitelistTags:            []string{"div", "p", "h1"},
 		RemoveUnlikelyCandidates: true,
 		WeightClasses:            true,
 		CleanConditionally:       true,
@@ -112,7 +115,7 @@ func (d *Document) Content() string {
 		article := d.getArticle()
 		articleText := d.sanitize(article)
 
-		length := len(strings.TrimSpace(articleText))
+		length := len(articleText)
 		if length < d.RetryLength {
 			retry := true
 
@@ -139,9 +142,14 @@ func (d *Document) Content() string {
 	return d.content
 }
 
-func (d *Document) prepareCandidates() {
+var (
 	// noscript might be valid, but probably not so we'll just remove it
-	d.document.Find("script,style,noscript,link").Each(func(i int, s *goquery.Selection) {
+	noContentTags []string = []string{"script", "style", "noscript", "link"}
+)
+
+func (d *Document) prepareCandidates() {
+	d.document.Find(strings.Join(noContentTags, ",")).Each(func(i int, s *goquery.Selection) {
+		Logger.Printf("Removing no content tag - %s\n", getName(s))
 		removeNodes(s)
 	})
 
@@ -177,7 +185,8 @@ func (d *Document) getTitle() string {
 }
 
 func (d *Document) getArticle() string {
-	output := bytes.NewBufferString("<div>")
+	//output := bytes.NewBufferString("<div>")
+	output := bytes.NewBufferString("")
 
 	siblingScoreThreshold := float32(math.Max(10, float64(d.bestCandidate.score*.2)))
 
@@ -214,27 +223,27 @@ func (d *Document) getArticle() string {
 		}
 	})
 
-	output.Write([]byte("</div>"))
+	//output.Write([]byte("</div>"))
 
 	return output.String()
 }
 
 func (d *Document) removeUnlikelyCandidates() {
-	d.document.Find("*").Not("html,body").Each(func(i int, s *goquery.Selection) {
+	d.document.Find("*").Not("html,title,body").Each(func(i int, s *goquery.Selection) {
 		class, _ := s.Attr("class")
 		id, _ := s.Attr("id")
 
 		str := class + id
 
-		if blacklistCandidatesRegexp.MatchString(str) || (unlikelyCandidatesRegexp.MatchString(str) && !okMaybeItsACandidateRegexp.MatchString(str)) {
-			Logger.Printf("Removing unlikely candidate - %s\n", str)
+		if blacklistCandidatesRegexp.MatchString(str) || (unlikelyCandidatesRegexp.MatchString(str) && !okMaybeItsACandidateRegexp.MatchString(str) && !okMaybeItsAHeaderFooterRegexp.MatchString(goquery.NodeName(s))) {
+			Logger.Printf("Removing unlikely candidate - %s\n", getName(s))
 			removeNodes(s)
 		}
 	})
 }
 
 func (d *Document) transformMisusedDivsIntoParagraphs() {
-	d.document.Find("div").Each(func(i int, s *goquery.Selection) {
+	d.document.Find("header,footer,article,div").Each(func(i int, s *goquery.Selection) {
 		html, err := s.Html()
 		if err != nil {
 			Logger.Printf("Unable to transform div to p %s\n", err)
@@ -243,9 +252,7 @@ func (d *Document) transformMisusedDivsIntoParagraphs() {
 
 		// transform <div>s that do not contain other block elements into <p>s
 		if !divToPElementsRegexp.MatchString(html) {
-			class, _ := s.Attr("class")
-			id, _ := s.Attr("id")
-			Logger.Printf("Altering div(#%s.%s) to p\n", id, class)
+			Logger.Printf("Altering %s to p\n", getName(s))
 
 			node := s.Get(0)
 			node.Data = "p"
@@ -323,7 +330,7 @@ func (d *Document) classWeight(s *goquery.Selection) int {
 	id, _ := s.Attr("id")
 
 	if class != "" {
-		if negativeRegexp.MatchString(class) {
+		if negativeRegexp.MatchString(class) && !okMaybeItsAHeaderFooterRegexp.MatchString(goquery.NodeName(s)) {
 			weight -= 25
 		}
 
@@ -333,7 +340,7 @@ func (d *Document) classWeight(s *goquery.Selection) int {
 	}
 
 	if id != "" {
-		if negativeRegexp.MatchString(id) {
+		if negativeRegexp.MatchString(id) && !okMaybeItsAHeaderFooterRegexp.MatchString(goquery.NodeName(s)) {
 			weight -= 25
 		}
 
@@ -358,6 +365,10 @@ func (d *Document) scoreNode(s *goquery.Selection) *candidate {
 	return &candidate{s, float32(contentScore)}
 }
 
+var (
+	headerTags []string = []string{"h1", "h2", "h3", "h4", "h5", "h6"}
+)
+
 func (d *Document) sanitize(article string) string {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(article))
 	d.Title = d.getTitle()
@@ -367,13 +378,15 @@ func (d *Document) sanitize(article string) string {
 	}
 
 	s := doc.Find("body")
-	s.Find("h1,h2,h3,h4,h5,h6").Each(func(i int, header *goquery.Selection) {
+	s.Find(strings.Join(headerTags, ",")).Each(func(i int, header *goquery.Selection) {
 		if d.classWeight(header) < 0 || d.getLinkDensity(header) > 0.33 {
+			Logger.Printf("Removing tag - %s\n", getName(header))
 			removeNodes(header)
 		}
 	})
 
 	s.Find("input,select,textarea,button,object,iframe,embed").Each(func(i int, s *goquery.Selection) {
+		Logger.Printf("Removing non-content tag - %s\n", getName(s))
 		removeNodes(s)
 	})
 
@@ -381,6 +394,7 @@ func (d *Document) sanitize(article string) string {
 		s.Find("p").Each(func(i int, s *goquery.Selection) {
 			html, _ := s.Html()
 			if len(strings.TrimSpace(html)) == 0 {
+				Logger.Printf("Removing empty node - %s\n", getName(s))
 				removeNodes(s)
 			}
 		})
@@ -390,22 +404,22 @@ func (d *Document) sanitize(article string) string {
 
 	// we'll sanitize all elements using a whitelist
 	replaceWithWhitespace := map[string]bool{
-		"br":         true,
-		"hr":         true,
-		"h1":         true,
-		"h2":         true,
-		"h3":         true,
-		"h4":         true,
-		"h5":         true,
-		"h6":         true,
-		"dl":         true,
-		"dd":         true,
-		"ol":         true,
-		"li":         true,
-		"ul":         true,
-		"address":    true,
-		"blockquote": true,
-		"center":     true,
+		//"br":         true,
+		//"hr":         true,
+		//"h1":         true,
+		//"h2":         true,
+		//"h3":         true,
+		//"h4":         true,
+		//"h5":         true,
+		//"h6":         true,
+		"dl":      true,
+		"dd":      true,
+		"ol":      true,
+		"li":      true,
+		"ul":      true,
+		"address": true,
+		//"blockquote": true,
+		"center": true,
 	}
 
 	whitelist := make(map[string]bool)
@@ -455,8 +469,7 @@ func (d *Document) sanitize(article string) string {
 	}
 
 	text = addTitle(d.Title, text)
-
-	return normalizeWhitespaceRegexp.ReplaceAllString(text, "\n")
+	return sanitizeWhitespace(text)
 }
 
 func addTitle(title string, html string) string {
@@ -485,8 +498,8 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 		}
 
 		if weight+contentScore < 0 {
-			removeNodes(s)
 			Logger.Printf("Conditionally cleaned %s%s with weight %f and content score %f\n", node.Data, getName(s), weight, contentScore)
+			removeNodes(s)
 			return
 		}
 
@@ -530,7 +543,7 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 			}
 
 			if remove {
-				Logger.Printf("Conditionally cleaned %s%s with weight %f and content score %f because it has %s\n", node.Data, getName(s), weight, contentScore, reason)
+				Logger.Printf("Conditionally cleaned %s with weight %f and content score %f because it has %s\n", getName(s), weight, contentScore, reason)
 				removeNodes(s)
 			}
 		}
@@ -540,8 +553,18 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 func getName(s *goquery.Selection) string {
 	class, _ := s.Attr("class")
 	id, _ := s.Attr("id")
-
-	return fmt.Sprintf("#%s.%s", id, class)
+	idLbl, classLbl := "", ""
+	if len(id) > 0 {
+		idLbl = "#" + id
+	}
+	if len(class) > 0 {
+		classLbl = "." + class
+	}
+	if s.Length() > 1 {
+		return fmt.Sprintf("%s%s%s[%d]", goquery.NodeName(s), idLbl, classLbl, s.Length())
+	} else {
+		return fmt.Sprintf("%s%s%s", goquery.NodeName(s), idLbl, classLbl)
+	}
 }
 
 func removeNodes(s *goquery.Selection) {
@@ -567,4 +590,11 @@ func replaceNodeWithChildren(n *html.Node) {
 	}
 
 	parent.RemoveChild(n)
+}
+
+func sanitizeWhitespace(text string) string {
+	text = normalizeHtmlWhiteSpaceRegexp.ReplaceAllString(text, " ")
+	text = normalizeWhitespaceRegexp.ReplaceAllString(text, " ")
+	text = strings.TrimSpace(text)
+	return text
 }
