@@ -21,10 +21,10 @@ var (
 
 	blacklistCandidatesRegexp  = regexp.MustCompile(`(?i)popupbody`)
 	okMaybeItsACandidateRegexp = regexp.MustCompile(`(?i)and|article|body|column|main|shadow`)
-	unlikelyCandidatesRegexp   = regexp.MustCompile(`(?i)combx|comment|community|hidden|disqus|modal|extra|foot|header|menu|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup`)
-	divToPElementsRegexp       = regexp.MustCompile(`(?i)<(a|dl|div|ol|pre|table|ul|header|footer|article)`)
+	unlikelyCandidatesRegexp   = regexp.MustCompile(`(?i)combx|comment|community|hidden|disqus|modal|extra|foot|header|menu|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup|share`)
+	divToPElementsRegexp       = regexp.MustCompile(`(?i)<(dl|div|ol|pre|table|ul|header|footer|article)`)
 
-	okMaybeItsAHeaderFooterRegexp = regexp.MustCompile(`(?i)(header|footer)`)
+	okMaybeItsAHeaderFooterRegexp = regexp.MustCompile(`(?i)(header|footer|h1|h2|h3|h4|h5|h6)`)
 
 	negativeRegexp = regexp.MustCompile(`(?i)combx|comment|com-|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|shoutbox|sidebar|sponsor|shopping|tags|tool|widget`)
 	positiveRegexp = regexp.MustCompile(`(?i)article|body|content|entry|hentry|main|page|pagination|post|text|blog|story`)
@@ -33,8 +33,9 @@ var (
 
 	sentenceRegexp = regexp.MustCompile(`\.( |$)`)
 
-	normalizeWhitespaceRegexp     = regexp.MustCompile(`[\r\n\f ]+`)
-	normalizeHtmlWhiteSpaceRegexp = regexp.MustCompile(`(&(nbsp);)+`)
+	normalizeWhitespaceRegexp     = regexp.MustCompile(`[\t ]+`)
+	normalizeEOLRegexp            = regexp.MustCompile(`[\r\n\f]+`)
+	normalizeHtmlWhiteSpaceRegexp = regexp.MustCompile(`(&nbsp;)+`)
 )
 
 type candidate struct {
@@ -219,7 +220,8 @@ func (d *Document) getArticle() string {
 			}
 
 			html, _ := s.Html()
-			fmt.Fprintf(output, "<%s>%s</%s>", tag, html, tag)
+
+			fmt.Fprintf(output, "<%s>%s</%s>\n", tag, html, tag)
 		}
 	})
 
@@ -432,10 +434,6 @@ func (d *Document) sanitize(article string) string {
 	var text string
 
 	s.Find("*").Each(func(i int, s *goquery.Selection) {
-		if text != "" {
-			return
-		}
-
 		// only look at element nodes
 		node := s.Get(0)
 		if node.Type != html.ElementNode {
@@ -595,6 +593,7 @@ func replaceNodeWithChildren(n *html.Node) {
 func sanitizeWhitespace(text string) string {
 	text = normalizeHtmlWhiteSpaceRegexp.ReplaceAllString(text, " ")
 	text = normalizeWhitespaceRegexp.ReplaceAllString(text, " ")
+	text = normalizeEOLRegexp.ReplaceAllString(text, "\n")
 	text = strings.TrimSpace(text)
 	return text
 }

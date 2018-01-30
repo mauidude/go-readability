@@ -2,8 +2,8 @@ package readability
 
 import (
 	"io/ioutil"
-	//	"log"
-	//	"os"
+	//"log"
+	//"os"
 	"strings"
 	"testing"
 )
@@ -137,13 +137,14 @@ func TestOutputForWellKnownDocuments(t *testing.T) {
 				//"Daybreak – 1.1",
 			},
 			excludedFragments: []string{
-			//"Previous Chapter",
-			//"Next Chapter",
+				"Like this:",
+				//"Previous Chapter",
+				//"Next Chapter",
 			},
 		},
 	}
-	//Logger = log.New(os.Stdout, "[readability] ", log.LstdFlags)
 
+	//Logger = log.New(os.Stdout, "[readability] ", log.LstdFlags)
 	for file, expectedOutput := range inputs {
 		bytes, err := ioutil.ReadFile("test_fixtures/" + file)
 		if err != nil {
