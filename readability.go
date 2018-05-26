@@ -21,8 +21,10 @@ var (
 
 	blacklistCandidatesRegexp  = regexp.MustCompile(`(?i)popupbody`)
 	okMaybeItsACandidateRegexp = regexp.MustCompile(`(?i)and|article|body|column|main|shadow`)
-	unlikelyCandidatesRegexp   = regexp.MustCompile(`(?i)combx|comment|community|hidden|disqus|modal|extra|foot|header|menu|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup`)
-	divToPElementsRegexp       = regexp.MustCompile(`(?i)<(a|blockquote|dl|div|img|ol|p|pre|table|ul)`)
+	unlikelyCandidatesRegexp   = regexp.MustCompile(`(?i)combx|comment|community|hidden|disqus|modal|extra|foot|header|menu|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup|share`)
+	divToPElementsRegexp       = regexp.MustCompile(`(?i)<(dl|div|ol|pre|table|ul|header|footer|article)`)
+
+	okMaybeItsAHeaderFooterRegexp = regexp.MustCompile(`(?i)(header|footer|h1|h2|h3|h4|h5|h6)`)
 
 	negativeRegexp = regexp.MustCompile(`(?i)combx|comment|com-|foot|footer|footnote|masthead|media|meta|outbrain|promo|related|scroll|shoutbox|sidebar|sponsor|shopping|tags|tool|widget`)
 	positiveRegexp = regexp.MustCompile(`(?i)article|body|content|entry|hentry|main|page|pagination|post|text|blog|story`)
@@ -31,7 +33,9 @@ var (
 
 	sentenceRegexp = regexp.MustCompile(`\.( |$)`)
 
-	normalizeWhitespaceRegexp = regexp.MustCompile(`[\r\n\f]+`)
+	normalizeWhitespaceRegexp     = regexp.MustCompile(`[\t ]+`)
+	normalizeEOLRegexp            = regexp.MustCompile(`[\r\n\f]+`)
+	normalizeHtmlWhiteSpaceRegexp = regexp.MustCompile(`(&nbsp;)+`)
 )
 
 type candidate struct {
@@ -50,6 +54,7 @@ type Document struct {
 	candidates    map[*html.Node]*candidate
 	bestCandidate *candidate
 
+	Title                    string
 	RemoveUnlikelyCandidates bool
 	WeightClasses            bool
 	CleanConditionally       bool
@@ -63,7 +68,7 @@ type Document struct {
 func NewDocument(s string) (*Document, error) {
 	d := &Document{
 		input:                    s,
-		WhitelistTags:            []string{"div", "p"},
+		WhitelistTags:            []string{"div", "p", "h1"},
 		RemoveUnlikelyCandidates: true,
 		WeightClasses:            true,
 		CleanConditionally:       true,
@@ -106,12 +111,19 @@ func (d *Document) initializeHtml(s string) error {
 
 func (d *Document) Content() string {
 	if d.content == "" {
-		d.prepareCandidates()
+		d.document.Find("html head").Children().Not("title").Each(func(i int, s *goquery.Selection) {
+			removeNodes(s)
+		})
+		d.rateElements()
+		content, _ := d.document.Html()
+		sanitizeWhitespace(content)
+		return content
 
+		d.prepareCandidates()
 		article := d.getArticle()
 		articleText := d.sanitize(article)
 
-		length := len(strings.TrimSpace(articleText))
+		length := len(articleText)
 		if length < d.RetryLength {
 			retry := true
 
@@ -132,16 +144,133 @@ func (d *Document) Content() string {
 				articleText = d.Content()
 			}
 		}
-
 		d.content = articleText
 	}
 
 	return d.content
 }
 
+var (
+	nonContentTags []string = []string{"meta", "script", "style", "iframe", "link", "form"}
+)
+
+func inArr(search string, arr []string) bool {
+	for _, elem := range nonContentTags {
+		if elem == search {
+			return true
+		}
+	}
+	return false
+}
+
+func elementNeedsRemoval(s *goquery.Selection) bool {
+	return inArr(goquery.NodeName(s), nonContentTags)
+}
+
+var allowEmptyTag []string = []string{"hr", "br", "img"}
+
+func validEmptyElement(s *goquery.Selection) bool {
+	return inArr(goquery.NodeName(s), allowEmptyTag)
+}
+
+var (
+	MinTextLength     int = 25
+	ScoreValidContent int = 60
+	ScoreIDMatch      int = 40
+	ScoreClassMatch   int = 25
+)
+
+func getLinkDensity(s *goquery.Selection) float32 {
+	linkLength := len(s.Find("a").Text())
+	textLength := len(s.Text())
+
+	if textLength == 0 {
+		return 0
+	}
+
+	return float32(linkLength) / float32(textLength)
+}
+
+func evalSelection(s *goquery.Selection) int {
+	if s.Length() > 1 {
+		s.Children().Each(func(i int, ss *goquery.Selection) {
+			evalSelection(ss)
+		})
+	}
+	var score int
+
+	Logger.Printf("Tag: %s", goquery.NodeName(s))
+	Logger.Printf("Size: %d", s.Length())
+
+	class, _ := s.Attr("class")
+	id, _ := s.Attr("id")
+
+	if len(class) > 0 {
+		if negativeRegexp.MatchString(class) {
+			score -= ScoreIDMatch
+		}
+		if positiveRegexp.MatchString(class) {
+			score += ScoreIDMatch
+		}
+	}
+
+	if len(id) > 0 {
+		if negativeRegexp.MatchString(id) {
+			score -= ScoreClassMatch
+		}
+		if positiveRegexp.MatchString(id) {
+			score += ScoreClassMatch
+		}
+	}
+
+	linkDensity := getLinkDensity(s)
+	if linkDensity > 0.3 {
+		s.Find("a").Each(func(i int, ss *goquery.Selection) {
+			removeNodes(ss)
+		})
+	}
+
+	content := sanitizeWhitespace(s.Text())
+	contentLen := len(content)
+
+	if contentLen == 0 {
+		if validEmptyElement(s) {
+			score += ScoreValidContent
+		}
+	}
+	if contentLen > MinTextLength {
+		score += contentLen
+	}
+	Logger.Printf("Content length: %d", len(content))
+	Logger.Printf("Link density: %f", linkDensity)
+
+	return score
+}
+
+func (d *Document) rateElements() {
+	d.document.Find("body").Children().Each(func(i int, s *goquery.Selection) {
+		if elementNeedsRemoval(s) {
+			Logger.Printf("Removing non-content tag - %s[%d]\n", getName(s), i)
+			removeNodes(s)
+			return
+		}
+		Logger.Printf("Evaluating [%d::%d] - %s\n", i, s.Length(), getName(s))
+
+		var score int
+		score = evalSelection(s)
+
+		Logger.Printf(" Score %d\n", score)
+		if score < ScoreValidContent {
+			Logger.Printf("Removing low score tag - %s[%d]\n", getName(s), i)
+			removeNodes(s)
+			return
+		}
+	})
+}
+
 func (d *Document) prepareCandidates() {
-	// noscript might be valid, but probably not so we'll just remove it
-	d.document.Find("script, style,noscript").Each(func(i int, s *goquery.Selection) {
+	d.document.Find(strings.Join(nonContentTags, ",")).Each(func(i int, s *goquery.Selection) {
+		Logger.Printf("Removing no content tag - %s\n", getName(s))
 		removeNodes(s)
 	})
 
@@ -172,8 +301,13 @@ func (d *Document) selectBestCandidate() {
 	d.bestCandidate = best
 }
 
+func (d *Document) getTitle() string {
+	return d.document.Find("head title").First().Text()
+}
+
 func (d *Document) getArticle() string {
-	output := bytes.NewBufferString("<div>")
+	//output := bytes.NewBufferString("<div>")
+	output := bytes.NewBufferString("")
 
 	siblingScoreThreshold := float32(math.Max(10, float64(d.bestCandidate.score*.2)))
 
@@ -206,31 +340,32 @@ func (d *Document) getArticle() string {
 			}
 
 			html, _ := s.Html()
-			fmt.Fprintf(output, "<%s>%s</%s>", tag, html, tag)
+
+			fmt.Fprintf(output, "<%s>%s</%s>\n", tag, html, tag)
 		}
 	})
 
-	output.Write([]byte("</div>"))
+	//output.Write([]byte("</div>"))
 
 	return output.String()
 }
 
 func (d *Document) removeUnlikelyCandidates() {
-	d.document.Find("*").Not("html,body").Each(func(i int, s *goquery.Selection) {
+	d.document.Find("*").Not("html,title,body").Each(func(i int, s *goquery.Selection) {
 		class, _ := s.Attr("class")
 		id, _ := s.Attr("id")
 
 		str := class + id
 
-		if blacklistCandidatesRegexp.MatchString(str) || (unlikelyCandidatesRegexp.MatchString(str) && !okMaybeItsACandidateRegexp.MatchString(str)) {
-			Logger.Printf("Removing unlikely candidate - %s\n", str)
+		if blacklistCandidatesRegexp.MatchString(str) || (unlikelyCandidatesRegexp.MatchString(str) && !okMaybeItsACandidateRegexp.MatchString(str) && !okMaybeItsAHeaderFooterRegexp.MatchString(goquery.NodeName(s))) {
+			Logger.Printf("Removing unlikely candidate - %s\n", getName(s))
 			removeNodes(s)
 		}
 	})
 }
 
 func (d *Document) transformMisusedDivsIntoParagraphs() {
-	d.document.Find("div").Each(func(i int, s *goquery.Selection) {
+	d.document.Find("header,footer,article,div").Each(func(i int, s *goquery.Selection) {
 		html, err := s.Html()
 		if err != nil {
 			Logger.Printf("Unable to transform div to p %s\n", err)
@@ -239,9 +374,7 @@ func (d *Document) transformMisusedDivsIntoParagraphs() {
 
 		// transform <div>s that do not contain other block elements into <p>s
 		if !divToPElementsRegexp.MatchString(html) {
-			class, _ := s.Attr("class")
-			id, _ := s.Attr("id")
-			Logger.Printf("Altering div(#%s.%s) to p\n", id, class)
+			Logger.Printf("Altering %s to p\n", getName(s))
 
 			node := s.Get(0)
 			node.Data = "p"
@@ -319,7 +452,7 @@ func (d *Document) classWeight(s *goquery.Selection) int {
 	id, _ := s.Attr("id")
 
 	if class != "" {
-		if negativeRegexp.MatchString(class) {
+		if negativeRegexp.MatchString(class) && !okMaybeItsAHeaderFooterRegexp.MatchString(goquery.NodeName(s)) {
 			weight -= 25
 		}
 
@@ -329,7 +462,7 @@ func (d *Document) classWeight(s *goquery.Selection) int {
 	}
 
 	if id != "" {
-		if negativeRegexp.MatchString(id) {
+		if negativeRegexp.MatchString(id) && !okMaybeItsAHeaderFooterRegexp.MatchString(goquery.NodeName(s)) {
 			weight -= 25
 		}
 
@@ -354,21 +487,28 @@ func (d *Document) scoreNode(s *goquery.Selection) *candidate {
 	return &candidate{s, float32(contentScore)}
 }
 
+var (
+	headerTags []string = []string{"h1", "h2", "h3", "h4", "h5", "h6"}
+)
+
 func (d *Document) sanitize(article string) string {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(article))
+	d.Title = d.getTitle()
 	if err != nil {
 		Logger.Println("Unable to create document", err)
 		return ""
 	}
 
 	s := doc.Find("body")
-	s.Find("h1,h2,h3,h4,h5,h6").Each(func(i int, header *goquery.Selection) {
+	s.Find(strings.Join(headerTags, ",")).Each(func(i int, header *goquery.Selection) {
 		if d.classWeight(header) < 0 || d.getLinkDensity(header) > 0.33 {
+			Logger.Printf("Removing tag - %s\n", getName(header))
 			removeNodes(header)
 		}
 	})
 
 	s.Find("input,select,textarea,button,object,iframe,embed").Each(func(i int, s *goquery.Selection) {
+		Logger.Printf("Removing non-content tag - %s\n", getName(s))
 		removeNodes(s)
 	})
 
@@ -376,6 +516,7 @@ func (d *Document) sanitize(article string) string {
 		s.Find("p").Each(func(i int, s *goquery.Selection) {
 			html, _ := s.Html()
 			if len(strings.TrimSpace(html)) == 0 {
+				Logger.Printf("Removing empty node - %s\n", getName(s))
 				removeNodes(s)
 			}
 		})
@@ -385,22 +526,22 @@ func (d *Document) sanitize(article string) string {
 
 	// we'll sanitize all elements using a whitelist
 	replaceWithWhitespace := map[string]bool{
-		"br":         true,
-		"hr":         true,
-		"h1":         true,
-		"h2":         true,
-		"h3":         true,
-		"h4":         true,
-		"h5":         true,
-		"h6":         true,
-		"dl":         true,
-		"dd":         true,
-		"ol":         true,
-		"li":         true,
-		"ul":         true,
-		"address":    true,
-		"blockquote": true,
-		"center":     true,
+		//"br":         true,
+		//"hr":         true,
+		//"h1":         true,
+		//"h2":         true,
+		//"h3":         true,
+		//"h4":         true,
+		//"h5":         true,
+		//"h6":         true,
+		"dl":      true,
+		"dd":      true,
+		"ol":      true,
+		"li":      true,
+		"ul":      true,
+		"address": true,
+		//"blockquote": true,
+		"center": true,
 	}
 
 	whitelist := make(map[string]bool)
@@ -413,10 +554,6 @@ func (d *Document) sanitize(article string) string {
 	var text string
 
 	s.Find("*").Each(func(i int, s *goquery.Selection) {
-		if text != "" {
-			return
-		}
-
 		// only look at element nodes
 		node := s.Get(0)
 		if node.Type != html.ElementNode {
@@ -449,7 +586,19 @@ func (d *Document) sanitize(article string) string {
 		text, _ = doc.Html()
 	}
 
-	return normalizeWhitespaceRegexp.ReplaceAllString(text, "\n")
+	text = addTitle(d.Title, text)
+	return sanitizeWhitespace(text)
+}
+
+func addTitle(title string, html string) string {
+	var htmlTitle bytes.Buffer
+	old := "<head></head>"
+
+	htmlTitle.WriteString("<head><title>")
+	htmlTitle.WriteString(title)
+	htmlTitle.WriteString("</title></head>")
+
+	return strings.Replace(html, old, htmlTitle.String(), 1)
 }
 
 func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
@@ -467,8 +616,8 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 		}
 
 		if weight+contentScore < 0 {
-			removeNodes(s)
 			Logger.Printf("Conditionally cleaned %s%s with weight %f and content score %f\n", node.Data, getName(s), weight, contentScore)
+			removeNodes(s)
 			return
 		}
 
@@ -512,7 +661,7 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 			}
 
 			if remove {
-				Logger.Printf("Conditionally cleaned %s%s with weight %f and content score %f because it has %s\n", node.Data, getName(s), weight, contentScore, reason)
+				Logger.Printf("Conditionally cleaned %s with weight %f and content score %f because it has %s\n", getName(s), weight, contentScore, reason)
 				removeNodes(s)
 			}
 		}
@@ -522,8 +671,18 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 func getName(s *goquery.Selection) string {
 	class, _ := s.Attr("class")
 	id, _ := s.Attr("id")
-
-	return fmt.Sprintf("#%s.%s", id, class)
+	idLbl, classLbl := "", ""
+	if len(id) > 0 {
+		idLbl = "#" + id
+	}
+	if len(class) > 0 {
+		classLbl = "." + class
+	}
+	if s.Length() > 1 {
+		return fmt.Sprintf("%s%s%s[%d]", goquery.NodeName(s), idLbl, classLbl, s.Length())
+	} else {
+		return fmt.Sprintf("%s%s%s", goquery.NodeName(s), idLbl, classLbl)
+	}
 }
 
 func removeNodes(s *goquery.Selection) {
@@ -549,4 +708,12 @@ func replaceNodeWithChildren(n *html.Node) {
 	}
 
 	parent.RemoveChild(n)
+}
+
+func sanitizeWhitespace(text string) string {
+	text = normalizeHtmlWhiteSpaceRegexp.ReplaceAllString(text, " ")
+	text = normalizeWhitespaceRegexp.ReplaceAllString(text, " ")
+	text = normalizeEOLRegexp.ReplaceAllString(text, "\n")
+	text = strings.TrimSpace(text)
+	return text
 }
