@@ -111,8 +111,15 @@ func (d *Document) initializeHtml(s string) error {
 
 func (d *Document) Content() string {
 	if d.content == "" {
-		d.prepareCandidates()
+		d.document.Find("html head").Children().Not("title").Each(func(i int, s *goquery.Selection) {
+			removeNodes(s)
+		})
+		d.rateElements()
+		content, _ := d.document.Html()
+		sanitizeWhitespace(content)
+		return content
 
+		d.prepareCandidates()
 		article := d.getArticle()
 		articleText := d.sanitize(article)
 
@@ -144,12 +151,125 @@ func (d *Document) Content() string {
 }
 
 var (
-	// noscript might be valid, but probably not so we'll just remove it
-	noContentTags []string = []string{"script", "style", "noscript", "link"}
+	nonContentTags []string = []string{"meta", "script", "style", "iframe", "link", "form"}
 )
 
+func inArr(search string, arr []string) bool {
+	for _, elem := range nonContentTags {
+		if elem == search {
+			return true
+		}
+	}
+	return false
+}
+
+func elementNeedsRemoval(s *goquery.Selection) bool {
+	return inArr(goquery.NodeName(s), nonContentTags)
+}
+
+var allowEmptyTag []string = []string{"hr", "br", "img"}
+
+func validEmptyElement(s *goquery.Selection) bool {
+	return inArr(goquery.NodeName(s), allowEmptyTag)
+}
+
+var (
+	MinTextLength     int = 25
+	ScoreValidContent int = 60
+	ScoreIDMatch      int = 40
+	ScoreClassMatch   int = 25
+)
+
+func getLinkDensity(s *goquery.Selection) float32 {
+	linkLength := len(s.Find("a").Text())
+	textLength := len(s.Text())
+
+	if textLength == 0 {
+		return 0
+	}
+
+	return float32(linkLength) / float32(textLength)
+}
+
+func evalSelection(s *goquery.Selection) int {
+	if s.Length() > 1 {
+		s.Children().Each(func(i int, ss *goquery.Selection) {
+			evalSelection(ss)
+		})
+	}
+	var score int
+
+	Logger.Printf("Tag: %s", goquery.NodeName(s))
+	Logger.Printf("Size: %d", s.Length())
+
+	class, _ := s.Attr("class")
+	id, _ := s.Attr("id")
+
+	if len(class) > 0 {
+		if negativeRegexp.MatchString(class) {
+			score -= ScoreIDMatch
+		}
+		if positiveRegexp.MatchString(class) {
+			score += ScoreIDMatch
+		}
+	}
+
+	if len(id) > 0 {
+		if negativeRegexp.MatchString(id) {
+			score -= ScoreClassMatch
+		}
+		if positiveRegexp.MatchString(id) {
+			score += ScoreClassMatch
+		}
+	}
+
+	linkDensity := getLinkDensity(s)
+	if linkDensity > 0.3 {
+		s.Find("a").Each(func(i int, ss *goquery.Selection) {
+			removeNodes(ss)
+		})
+	}
+
+	content := sanitizeWhitespace(s.Text())
+	contentLen := len(content)
+
+	if contentLen == 0 {
+		if validEmptyElement(s) {
+			score += ScoreValidContent
+		}
+	}
+	if contentLen > MinTextLength {
+		score += contentLen
+	}
+	Logger.Printf("Content length: %d", len(content))
+	Logger.Printf("Link density: %f", linkDensity)
+
+	return score
+}
+
+func (d *Document) rateElements() {
+	d.document.Find("body").Children().Each(func(i int, s *goquery.Selection) {
+		if elementNeedsRemoval(s) {
+			Logger.Printf("Removing non-content tag - %s[%d]\n", getName(s), i)
+			removeNodes(s)
+			return
+		}
+		Logger.Printf("Evaluating [%d::%d] - %s\n", i, s.Length(), getName(s))
+
+		var score int
+		score = evalSelection(s)
+
+		Logger.Printf(" Score %d\n", score)
+		if score < ScoreValidContent {
+			Logger.Printf("Removing low score tag - %s[%d]\n", getName(s), i)
+			removeNodes(s)
+			return
+		}
+	})
+}
+
 func (d *Document) prepareCandidates() {
-	d.document.Find(strings.Join(noContentTags, ",")).Each(func(i int, s *goquery.Selection) {
+	d.document.Find(strings.Join(nonContentTags, ",")).Each(func(i int, s *goquery.Selection) {
 		Logger.Printf("Removing no content tag - %s\n", getName(s))
 		removeNodes(s)
 	})
