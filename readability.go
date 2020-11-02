@@ -141,7 +141,7 @@ func (d *Document) Content() string {
 
 func (d *Document) prepareCandidates() {
 	// noscript might be valid, but probably not so we'll just remove it
-	d.document.Find("script, style,noscript").Each(func(i int, s *goquery.Selection) {
+	d.document.Find("script,style,noscript").Each(func(i int, s *goquery.Selection) {
 		removeNodes(s)
 	})
 
@@ -253,7 +253,7 @@ func (d *Document) scoreParagraphs(minimumTextLength int) {
 	candidates := make(map[*html.Node]*candidate)
 
 	d.document.Find("p,td").Each(func(i int, s *goquery.Selection) {
-		text := s.Text()
+		text := strings.TrimSpace(s.Text())
 
 		// if this paragraph is less than x chars, don't count it
 		if len(text) < minimumTextLength {
@@ -345,7 +345,7 @@ func (d *Document) scoreNode(s *goquery.Selection) *candidate {
 	contentScore := d.classWeight(s)
 	if s.Is("div") {
 		contentScore += 5
-	} else if s.Is("blockquote,form") {
+	} else if s.Is("blockquote,form,fieldset") {
 		contentScore = 3
 	} else if s.Is("th") {
 		contentScore -= 5
