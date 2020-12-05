@@ -58,12 +58,14 @@ type Document struct {
 	MinTextLength            int
 	RemoveEmptyNodes         bool
 	WhitelistTags            []string
+	WhitelistAttrs           map[string][]string
 }
 
 func NewDocument(s string) (*Document, error) {
 	d := &Document{
 		input:                    s,
 		WhitelistTags:            []string{"div", "p"},
+		WhitelistAttrs:           make(map[string][]string),
 		RemoveUnlikelyCandidates: true,
 		WeightClasses:            true,
 		CleanConditionally:       true,
@@ -423,9 +425,25 @@ func (d *Document) sanitize(article string) string {
 			return
 		}
 
-		// if element is in whitelist, delete all its attributes
+		// if element is in whitelist then delete all unwanted attributes
 		if _, ok := whitelist[node.Data]; ok {
-			node.Attr = make([]html.Attribute, 0)
+			var allowedAttrs []html.Attribute
+			if whiteAttrs, ok := d.WhitelistAttrs[node.Data]; ok {
+				for _, el := range node.Attr {
+					attrFound := false
+					for _, w := range whiteAttrs {
+						if w == el.Key {
+							attrFound = true
+							break
+						}
+					}
+					if attrFound {
+						allowedAttrs = append(allowedAttrs, el)
+					}
+				}
+			}
+
+			node.Attr = allowedAttrs
 		} else {
 			if _, ok := replaceWithWhitespace[node.Data]; ok {
 				// just replace with a text node and add whitespace
