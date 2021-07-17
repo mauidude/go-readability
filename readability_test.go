@@ -64,7 +64,7 @@ func TestInsertSpaceForBlockElements(t *testing.T) {
 
 func TestOutputForWellKnownDocuments(t *testing.T) {
 	inputs := map[string]*expectedOutput{
-		"blogpost_with_links.html": &expectedOutput{
+		"blogpost_with_links.html": {
 			requiredFragments: []string{
 				"The zebras and porcupines get together to beat the living shit out of zombies, who are trying to wreck the havoc upon them. The ceiling cat is awaken by the noise they're making, and summons the basement cat to do the punishment. Zombies bite the ceiling cat and ceiling cat decides to destroy the universe. Then the big bang happens and this shit doesn't matter anymore.",
 				"Ceiling cat, the",
@@ -73,7 +73,7 @@ func TestOutputForWellKnownDocuments(t *testing.T) {
 			excludedFragments: []string{},
 		},
 
-		"globemail-ottowa_cuts.html": &expectedOutput{
+		"globemail-ottowa_cuts.html": {
 			requiredFragments: []string{
 				"Treasury Board President Stockwell Day is trumpeting job cuts at government boards and agencies in the name of fiscal prudence – but the measures are largely phantom restraint because most affected posts are empty and have been for some time.",
 				"Mr. Day, the Harper government's point man for belt-tightening in Ottawa, released Monday a list of 245 cabinet appointments that will be eliminated to make government more efficient.",
@@ -104,7 +104,7 @@ func TestOutputForWellKnownDocuments(t *testing.T) {
 				"<script",
 			},
 		},
-		"channel4-1.html": &expectedOutput{
+		"channel4-1.html": {
 			requiredFragments: []string{
 				"Judge rules Briton can be force-fed",
 				"A US judge has ruled that prison officials may continue force-feeding a Briton who began a hunger strike in September 2007 over claims he was convicted on a fabricated sexual assault charge.",
@@ -115,7 +115,7 @@ func TestOutputForWellKnownDocuments(t *testing.T) {
 				"Share this article",
 			},
 		},
-		"foxnews-india1.html": &expectedOutput{
+		"foxnews-india1.html": {
 			requiredFragments: []string{
 				"Police say 28 people have been killed in central India after the bus they were traveling in touched a high-voltage wire and caught fire.",
 				"Police officer Ram Pyari Dhurwey says the accident occurred Friday in Mandla district in Madhya Pradesh state.",
