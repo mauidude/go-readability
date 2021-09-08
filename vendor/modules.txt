@@ -1,0 +1,17 @@
+# github.com/PuerkitoBio/goquery v1.6.0
+## explicit
+github.com/PuerkitoBio/goquery
+# github.com/andybalholm/cascadia v1.2.0
+## explicit
+github.com/andybalholm/cascadia
+# github.com/inconshreveable/mousetrap v1.0.0
+github.com/inconshreveable/mousetrap
+# github.com/spf13/cobra v1.1.1
+## explicit
+github.com/spf13/cobra
+# github.com/spf13/pflag v1.0.5
+github.com/spf13/pflag
+# golang.org/x/net v0.0.0-20201031054903-ff519b6c9102
+## explicit
+golang.org/x/net/html
+golang.org/x/net/html/atom

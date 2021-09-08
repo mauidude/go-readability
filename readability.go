@@ -128,7 +128,7 @@ func (d *Document) Content() string {
 
 			if retry {
 				Logger.Printf("Retrying with length %d < retry length %d\n", length, d.RetryLength)
-				d.initializeHtml(d.input)
+				_ = d.initializeHtml(d.input)
 				articleText = d.Content()
 			}
 		}
@@ -178,13 +178,13 @@ func (d *Document) getArticle() string {
 	siblingScoreThreshold := float32(math.Max(10, float64(d.bestCandidate.score*.2)))
 
 	d.bestCandidate.selection.Siblings().Union(d.bestCandidate.selection).Each(func(i int, s *goquery.Selection) {
-		append := false
+		appnd := false
 		n := s.Get(0)
 
 		if n == d.bestCandidate.Node() {
-			append = true
+			appnd = true
 		} else if c, ok := d.candidates[n]; ok && c.score >= siblingScoreThreshold {
-			append = true
+			appnd = true
 		}
 
 		if s.Is("p") {
@@ -193,20 +193,20 @@ func (d *Document) getArticle() string {
 			contentLength := len(content)
 
 			if contentLength >= 80 && linkDensity < .25 {
-				append = true
+				appnd = true
 			} else if contentLength < 80 && linkDensity == 0 {
-				append = sentenceRegexp.MatchString(content)
+				appnd = sentenceRegexp.MatchString(content)
 			}
 		}
 
-		if append {
+		if appnd {
 			tag := "div"
 			if s.Is("p") {
 				tag = n.Data
 			}
 
 			html, _ := s.Html()
-			fmt.Fprintf(output, "<%s>%s</%s>", tag, html, tag)
+			_, _ = fmt.Fprintf(output, "<%s>%s</%s>", tag, html, tag)
 		}
 	})
 
@@ -280,7 +280,7 @@ func (d *Document) scoreParagraphs(minimumTextLength int) {
 
 		contentScore := float32(1.0)
 		contentScore += float32(strings.Count(text, ",") + 1)
-		contentScore += float32(math.Min(float64(int(len(text)/100.0)), 3))
+		contentScore += float32(math.Min(float64(len(text)/100.0), 3))
 
 		candidates[parentNode].score += contentScore
 		if grandparentNode != nil {
