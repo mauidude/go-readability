@@ -104,7 +104,7 @@ func (d *Document) initializeHtml(s string) error {
 	return nil
 }
 
-func (d *Document) Content() string {
+func (d *Document) ContentWithHTML() (content string, html string) {
 	if d.content == "" {
 		d.prepareCandidates()
 
@@ -129,14 +129,19 @@ func (d *Document) Content() string {
 			if retry {
 				Logger.Printf("Retrying with length %d < retry length %d\n", length, d.RetryLength)
 				_ = d.initializeHtml(d.input)
-				articleText = d.Content()
+				articleText, _ = d.ContentWithHTML()
 			}
 		}
 
 		d.content = articleText
 	}
 
-	return d.content
+	return d.content, d.getArticle()
+}
+
+func (d *Document) Content() (content string) {
+	content, _ = d.ContentWithHTML()
+	return content
 }
 
 func (d *Document) prepareCandidates() {
@@ -494,7 +499,7 @@ func (d *Document) cleanConditionally(s *goquery.Selection, selector string) {
 			} else if counts["li"] > counts["p"] && !s.Is("ul,ol") {
 				reason = "more <li>s than <p>s"
 				remove = true
-			} else if counts["input"] > int(counts["p"]/3.0) {
+			} else if counts["input"] > counts["p"]/3.0 {
 				reason = "less than 3x <p>s than <input>s"
 				remove = true
 			} else if contentLength < d.MinTextLength && (counts["img"] == 0 || counts["img"] > 2) {
