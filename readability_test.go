@@ -20,9 +20,20 @@ func TestGeneralFunctionality(t *testing.T) {
 
 	doc.MinTextLength = 0
 	doc.RetryLength = 1
-	content := doc.Content()
-	if !strings.Contains(content, "Some content") {
-		t.Errorf("Expected content %q to match %q", content, "Some content")
+	content, source := doc.ContentWithHTML()
+
+	const expectedContent = "Some content"
+	if !strings.Contains(content, expectedContent) {
+		t.Errorf("Expected content %q to match %q", content, expectedContent)
+	}
+
+	const expectedHTML = "<div><div><p>Some content</p></div></div>"
+	if source != expectedHTML {
+		t.Errorf("Expected source %q to match %q", source, expectedHTML)
+	}
+
+	if doc.Content() != content {
+		t.Errorf("Expected doc.Content %q to match %q", content, doc.Content())
 	}
 }
 
